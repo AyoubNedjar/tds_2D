@@ -186,4 +186,31 @@ public class FiltrageLineaireLocal {
         // filtreMoyenneur ne fait rien d'autre que preparer le masque
         return filtreMasqueConvolution(image, masque);
     }
+
+
+    // Dans FiltrageLineaireLocal — nouvelle méthode pour les contours
+    public static int[][] filtreMasqueConvolutionBrut(int[][] image, double[][] masque) {
+        int M = image.length;
+        int N = image[0].length;
+        int rayon = masque.length / 2;
+        int[][] resultat = new int[M][N];
+
+        for (int i = 0; i < M; i++) {
+            for (int j = 0; j < N; j++) {
+                double somme = 0;
+                for (int k = -rayon; k <= rayon; k++) {
+                    for (int l = -rayon; l <= rayon; l++) {
+                        int ni = i + k;
+                        int nj = j + l;
+                        if (ni >= 0 && ni < M && nj >= 0 && nj < N) {
+                            somme += image[ni][nj] * masque[k+rayon][l+rayon];
+                        }
+                    }
+                }
+                // PAS de clamp → on garde la valeur brute signée
+                resultat[i][j] = (int) Math.round(somme);
+            }
+        }
+        return resultat;
+    }
 }

@@ -9,10 +9,20 @@ import ImageProcessing.Fourier.Fourier;
 import ImageProcessing.Histogramme.Histogramme;
 import ImageProcessing.Lineaire.FiltrageLineaireGlobal;
 import ImageProcessing.Lineaire.FiltrageLineaireLocal;
+import ImageProcessing.NonLineaire.MorphoElementaire;
+import ImageProcessing.NonLineaire.MorphoComplexe;
 import isilimageprocessing.Dialogues.*;
+import isilimageprocessing.SlotData;
+import isilimageprocessing.SlotReceiver;
 import java.awt.*;
+import java.awt.datatransfer.*;
+import java.awt.event.MouseMotionAdapter;
+import java.awt.event.MouseEvent;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.*;
+import javax.swing.TransferHandler;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartFrame;
 import org.jfree.chart.JFreeChart;
@@ -31,7 +41,22 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
     private CImageRGB imageRGB;
     private CImageNG  imageNG;
     private javax.swing.JMenu jMenuFiltrageLineaire;
-    
+    private javax.swing.JMenu jMenuTraitementNonLineaire;
+    private javax.swing.JMenu jMenuContours;
+    private javax.swing.JMenu jMenuSeuillage;
+    private javax.swing.JMenu jMenuApplications;
+
+    // --- Système de slots ---
+    private static final int   NB_SLOTS       = 4;
+    private CImageNG[]         slotImagesNG    = new CImageNG[NB_SLOTS];
+    private CImageRGB[]        slotImagesRGB   = new CImageRGB[NB_SLOTS];
+    private String[]           slotLabels      = new String[NB_SLOTS];
+    private JLabelBeanCImage[] slotObservers   = new JLabelBeanCImage[NB_SLOTS];
+    private JPanel[]           slotPanels      = new JPanel[NB_SLOTS];
+    private JScrollPane[]      slotScrollPanes = new JScrollPane[NB_SLOTS];
+    private JLabel[]           slotTitleLabels = new JLabel[NB_SLOTS];
+    private int                activeSlot      = 0;
+
     private JLabelBeanCImage observer;
     private Color couleurPinceauRGB;
     private int   couleurPinceauNG;
@@ -62,6 +87,12 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         couleurPinceauNG = 0;
 
         setupFiltrageMenu();
+        setupMorphoMenu();
+        setupContoursMenu();
+        setupSeuillageMenu();
+        setupApplicationsMenu();
+        setupSlots();
+        setupHistogrammeExtraMenu();
     }
     
     /** This method is called from within the constructor to
@@ -281,7 +312,7 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         jMenuHistogramme.setText("Histogramme");
 
         jMenuHistogrammeAfficher.setIcon(new javax.swing.ImageIcon(getClass().getResource("/Icones/report_32_hot.jpg"))); // NOI18N
-        jMenuHistogrammeAfficher.setText("Afficher");
+        jMenuHistogrammeAfficher.setText("Afficher les histogrammes");
         jMenuHistogrammeAfficher.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jMenuHistogrammeAfficherActionPerformed(evt);
@@ -353,14 +384,20 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         jMenuFourier.setEnabled(true);
         jMenuHistogramme.setEnabled(true);
         jMenuFiltrageLineaire.setEnabled(true);
+        jMenuTraitementNonLineaire.setEnabled(true);
+        jMenuContours.setEnabled(true);
+        jMenuSeuillage.setEnabled(true);
     }
-    
+
     private void activeMenusRGB()
     {
         jMenuDessiner.setEnabled(true);
         jMenuFourier.setEnabled(false);
         jMenuHistogramme.setEnabled(false);
         jMenuFiltrageLineaire.setEnabled(false);
+        jMenuTraitementNonLineaire.setEnabled(false);
+        jMenuContours.setEnabled(false);
+        jMenuSeuillage.setEnabled(false);
     }
     
     private void jCheckBoxMenuItemDessinerCerclePleinActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxMenuItemDessinerCerclePleinActionPerformed
@@ -535,6 +572,10 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
                 try 
                 {
                     imageNG = new CImageNG(fichier);
+                    slotImagesNG[activeSlot]  = imageNG;
+                    slotImagesRGB[activeSlot] = null;
+                    slotLabels[activeSlot]    = fichier.getName();
+                    slotTitleLabels[activeSlot].setText(fichier.getName());
                     observer.setCImage(imageNG);
                     imageRGB = null;
                     activeMenusNG();
@@ -551,6 +592,11 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         JDialogNouvelleCImageNG dialog = new JDialogNouvelleCImageNG(this,true);
         dialog.setVisible(true);
         imageNG = dialog.getCImageNG();
+        if (imageNG == null) return;
+        slotImagesNG[activeSlot]  = imageNG;
+        slotImagesRGB[activeSlot] = null;
+        slotLabels[activeSlot]    = "Nouvelle NG";
+        slotTitleLabels[activeSlot].setText("Nouvelle NG");
         observer.setCImage(imageNG);
         imageRGB = null;
         activeMenusNG();
@@ -618,6 +664,11 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         JDialogNouvelleCImageRGB dialog = new JDialogNouvelleCImageRGB(this,true);
         dialog.setVisible(true);
         imageRGB = dialog.getCImageRGB();
+        if (imageRGB == null) return;
+        slotImagesRGB[activeSlot] = imageRGB;
+        slotImagesNG[activeSlot]  = null;
+        slotLabels[activeSlot]    = "Nouvelle RGB";
+        slotTitleLabels[activeSlot].setText("Nouvelle RGB");
         observer.setCImage(imageRGB);
         imageNG = null;
         activeMenusRGB();
@@ -640,6 +691,10 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
                 try 
                 {
                     imageRGB = new CImageRGB(fichier);
+                    slotImagesRGB[activeSlot] = imageRGB;
+                    slotImagesNG[activeSlot]  = null;
+                    slotLabels[activeSlot]    = fichier.getName();
+                    slotTitleLabels[activeSlot].setText(fichier.getName());
                     observer.setCImage(imageRGB);
                     imageNG = null;
                     activeMenusRGB();
@@ -656,6 +711,12 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
      * @param args the command line arguments
      */
     public static void main(String args[]) {
+        // FlatLaf Dark — appliqué par réflexion pour compiler sans le JAR
+        try {
+            Class<?> laf = Class.forName("com.formdev.flatlaf.FlatDarkLaf");
+            UIManager.setLookAndFeel((javax.swing.LookAndFeel) laf.getDeclaredConstructor().newInstance());
+        } catch (Exception ignored) { /* JAR absent : thème système utilisé */ }
+
         java.awt.EventQueue.invokeLater(new Runnable() {
             public void run() {
                 new IsilImageProcessing().setVisible(true);
@@ -772,6 +833,66 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
     }
     
     // =========================================================
+    // HISTOGRAMME — ajout du sous-menu paramètres
+    // =========================================================
+
+    private void setupHistogrammeExtraMenu()
+    {
+        // Paramètres statistiques
+        javax.swing.JMenuItem itemParams = new javax.swing.JMenuItem("Afficher les paramètres de l'image");
+        itemParams.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                afficherParametresImage();
+            }
+        });
+        jMenuHistogramme.add(itemParams);
+
+        jMenuHistogramme.addSeparator();
+
+        // Transformations tonales
+        addHistoRehaussementItem("Transformation linéaire (sans saturation)",
+                                  JDialogRehaussement.Type.LINEAIRE);
+        addHistoRehaussementItem("Transformation linéaire avec saturation",
+                                  JDialogRehaussement.Type.LINEAIRE_SAT);
+        addHistoRehaussementItem("Correction Gamma",
+                                  JDialogRehaussement.Type.GAMMA);
+        addHistoRehaussementItem("Égalisation de l'histogramme",
+                                  JDialogRehaussement.Type.EGALISATION);
+        addHistoRehaussementItem("Négatif",
+                                  JDialogRehaussement.Type.NEGATIF);
+    }
+
+    private void addHistoRehaussementItem(String texte,
+                                           final JDialogRehaussement.Type type)
+    {
+        javax.swing.JMenuItem item = new javax.swing.JMenuItem(texte);
+        item.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ouvrirRehaussement(type);
+            }
+        });
+        jMenuHistogramme.add(item);
+    }
+
+    private void ouvrirRehaussement(JDialogRehaussement.Type type)
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        new JDialogRehaussement(this, type, img, makeSlotReceiver()).setVisible(true);
+    }
+
+    private void afficherParametresImage()
+    {
+        if (imageNG == null) return;
+        try {
+            new JDialogParametresImage(this, imageNG.getMatrice()).setVisible(true);
+        } catch (CImageNGException ex) {
+            System.err.println("Erreur CImageNG : " + ex.getMessage());
+        }
+    }
+
+    // =========================================================
     // FILTRAGE LINEAIRE — setup du menu et handlers
     // =========================================================
 
@@ -841,151 +962,854 @@ public class IsilImageProcessing extends javax.swing.JFrame implements ClicListe
         jMenuBar1.add(jMenuFiltrageLineaire);
     }
 
-    private Integer demanderFrequenceCoupure(String titre)
+    private int[][] getActiveMatrix()
     {
-        String input = JOptionPane.showInputDialog(this, "Fréquence de coupure :", titre, JOptionPane.QUESTION_MESSAGE);
-        if (input == null) return null;
-        try { return Integer.parseInt(input.trim()); }
-        catch (NumberFormatException ex)
-        {
-            JOptionPane.showMessageDialog(this, "Valeur invalide.", "Erreur", JOptionPane.ERROR_MESSAGE);
-            return null;
-        }
+        if (imageNG == null) return null;
+        try { return imageNG.getMatrice(); }
+        catch (CImageNGException ex) { return null; }
     }
 
-    private Integer demanderOrdre(String titre)
+    private SlotReceiver makeSlotReceiver()
     {
-        String input = JOptionPane.showInputDialog(this, "Ordre du filtre :", titre, JOptionPane.QUESTION_MESSAGE);
-        if (input == null) return null;
-        try { return Integer.parseInt(input.trim()); }
-        catch (NumberFormatException ex)
-        {
-            JOptionPane.showMessageDialog(this, "Valeur invalide.", "Erreur", JOptionPane.ERROR_MESSAGE);
-            return null;
+        return new SlotReceiver() {
+            public void accept(int[][] m, String l) { afficherImageResultat(m, l); }
+        };
+    }
+
+    private SlotData[] buildMasqueSlots()
+    {
+        List<SlotData> list = new ArrayList<SlotData>();
+        for (int i = 0; i < NB_SLOTS; i++) {
+            if (slotImagesNG[i] != null) {
+                try {
+                    String nom = (slotLabels[i] != null) ? slotLabels[i] : "Slot " + (i + 1);
+                    list.add(new SlotData(slotImagesNG[i].getMatrice(), nom));
+                } catch (CImageNGException ignored) {}
+            }
         }
+        return list.toArray(new SlotData[0]);
     }
 
     private void afficherImageResultat(int[][] matrice, String titre)
     {
-        try
-        {
-            CImageNG imgResultat = new CImageNG(matrice);
-            JLabelBeanCImage labelResultat = new JLabelBeanCImage();
-            labelResultat.setCImage(imgResultat);
-            javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(labelResultat);
-            javax.swing.JFrame frame = new javax.swing.JFrame(titre);
-            frame.getContentPane().add(scroll);
-            frame.pack();
-            frame.setLocationRelativeTo(this);
-            frame.setDefaultCloseOperation(javax.swing.JFrame.DISPOSE_ON_CLOSE);
-            frame.setVisible(true);
-        }
-        catch (CImageNGException ex)
-        {
-            System.err.println("Erreur affichage résultat : " + ex.getMessage());
-        }
+        int cible = -1;
+        for (int i = 0; i < NB_SLOTS; i++)
+            if (slotImagesNG[i] == null && slotImagesRGB[i] == null) { cible = i; break; }
+        if (cible == -1) cible = (activeSlot + 1) % NB_SLOTS;
+        placeInSlot(cible, matrice, titre);
     }
 
     private void filtrePasseBasIdealActionPerformed()
     {
         if (imageNG == null) return;
-        Integer fc = demanderFrequenceCoupure("Passe-bas idéal");
-        if (fc == null) return;
-        try
-        {
-            int[][] resultat = FiltrageLineaireGlobal.filtrePasseBasIdeal(imageNG.getMatrice(), fc);
-            afficherImageResultat(resultat, "Passe-bas idéal  (fc=" + fc + ")");
-        }
-        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Fréquence de coupure :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(30, 1, 999, 1));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return FiltrageLineaireGlobal.filtrePasseBasIdeal(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Passe-bas idéal", img, params, action, makeSlotReceiver()).setVisible(true);
     }
 
     private void filtrePasseHautIdealActionPerformed()
     {
         if (imageNG == null) return;
-        Integer fc = demanderFrequenceCoupure("Passe-haut idéal");
-        if (fc == null) return;
-        try
-        {
-            int[][] resultat = FiltrageLineaireGlobal.filtrePasseHautIdeal(imageNG.getMatrice(), fc);
-            afficherImageResultat(resultat, "Passe-haut idéal  (fc=" + fc + ")");
-        }
-        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Fréquence de coupure :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(30, 1, 999, 1));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return FiltrageLineaireGlobal.filtrePasseHautIdeal(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Passe-haut idéal", img, params, action, makeSlotReceiver()).setVisible(true);
     }
 
     private void filtrePasseBasButterworthActionPerformed()
     {
         if (imageNG == null) return;
-        Integer fc    = demanderFrequenceCoupure("Passe-bas Butterworth");
-        if (fc == null) return;
-        Integer ordre = demanderOrdre("Passe-bas Butterworth");
-        if (ordre == null) return;
-        try
-        {
-            int[][] resultat = FiltrageLineaireGlobal.filtrePasseBasButterworth(imageNG.getMatrice(), fc, ordre);
-            afficherImageResultat(resultat, "Passe-bas Butterworth  (fc=" + fc + ", ordre=" + ordre + ")");
-        }
-        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Fréquence coupure :"));
+        final JSpinner spFc = new JSpinner(new SpinnerNumberModel(30, 1, 999, 1));
+        params.add(spFc);
+        params.add(new JLabel("  Ordre :"));
+        final JSpinner spOrdre = new JSpinner(new SpinnerNumberModel(2, 1, 20, 1));
+        params.add(spOrdre);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return FiltrageLineaireGlobal.filtrePasseBasButterworth(
+                    img, (Integer) spFc.getValue(), (Integer) spOrdre.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Passe-bas Butterworth", img, params, action, makeSlotReceiver()).setVisible(true);
     }
 
     private void filtrePasseHautButterworthActionPerformed()
     {
         if (imageNG == null) return;
-        Integer fc    = demanderFrequenceCoupure("Passe-haut Butterworth");
-        if (fc == null) return;
-        Integer ordre = demanderOrdre("Passe-haut Butterworth");
-        if (ordre == null) return;
-        try
-        {
-            int[][] resultat = FiltrageLineaireGlobal.filtrePasseHautButterworth(imageNG.getMatrice(), fc, ordre);
-            afficherImageResultat(resultat, "Passe-haut Butterworth  (fc=" + fc + ", ordre=" + ordre + ")");
-        }
-        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Fréquence coupure :"));
+        final JSpinner spFc = new JSpinner(new SpinnerNumberModel(30, 1, 999, 1));
+        params.add(spFc);
+        params.add(new JLabel("  Ordre :"));
+        final JSpinner spOrdre = new JSpinner(new SpinnerNumberModel(2, 1, 20, 1));
+        params.add(spOrdre);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return FiltrageLineaireGlobal.filtrePasseHautButterworth(
+                    img, (Integer) spFc.getValue(), (Integer) spOrdre.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Passe-haut Butterworth", img, params, action, makeSlotReceiver()).setVisible(true);
     }
 
     private void filtreLocalMoyenneurActionPerformed()
     {
         if (imageNG == null) return;
-        String input = JOptionPane.showInputDialog(this,
-            "Taille du masque (entier impair, ex: 3, 5, 7...) :",
-            "Filtre moyenneur", JOptionPane.QUESTION_MESSAGE);
-        if (input == null) return;
-        try
-        {
-            int taille = Integer.parseInt(input.trim());
-            if (taille < 1 || taille % 2 == 0)
-            {
-                JOptionPane.showMessageDialog(this, "La taille doit être un entier impair positif.",
-                    "Erreur", JOptionPane.ERROR_MESSAGE);
-                return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return FiltrageLineaireLocal.filtreMoyenneur(img, (Integer) sp.getValue());
             }
-            int[][] resultat = FiltrageLineaireLocal.filtreMoyenneur(imageNG.getMatrice(), taille);
-            afficherImageResultat(resultat, "Filtre moyenneur  (taille=" + taille + ")");
-        }
-        catch (NumberFormatException ex)
-        {
-            JOptionPane.showMessageDialog(this, "Valeur invalide.", "Erreur", JOptionPane.ERROR_MESSAGE);
-        }
-        catch (CImageNGException ex)
-        {
-            System.err.println("Erreur CImageNG : " + ex.getMessage());
-        }
+        };
+        new JDialogTraitement(this, "Filtre moyenneur", img, params, action, makeSlotReceiver()).setVisible(true);
     }
 
     private void filtreLocalMasqueConvolutionActionPerformed()
     {
         if (imageNG == null) return;
-        JDialogMasqueConvolution dialog = new JDialogMasqueConvolution(this, true);
-        dialog.setVisible(true);
-        double[][] masque = dialog.getMasque();
-        if (masque == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        final JDialogTraitement.MasquePanel masquePanel = new JDialogTraitement.MasquePanel();
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                double[][] m = masquePanel.getMasque();
+                return FiltrageLineaireLocal.filtreMasqueConvolution(img, m);
+            }
+        };
+        new JDialogTraitement(this, "Masque de convolution", img, masquePanel, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    // =========================================================
+    // MORPHOLOGIE ELEMENTAIRE — setup du menu et handlers
+    // =========================================================
+
+    private void setupMorphoMenu()
+    {
+        jMenuTraitementNonLineaire = new javax.swing.JMenu("Traitement non-linéaire");
+        jMenuTraitementNonLineaire.setEnabled(false);
+
+        javax.swing.JMenu jMenuMorphoElementaire = new javax.swing.JMenu("Elementaire");
+
+        javax.swing.JMenuItem itemErosion = new javax.swing.JMenuItem("Erosion");
+        itemErosion.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoErosionActionPerformed();
+            }
+        });
+
+        javax.swing.JMenuItem itemDilatation = new javax.swing.JMenuItem("Dilatation");
+        itemDilatation.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoDilatationActionPerformed();
+            }
+        });
+
+        javax.swing.JMenuItem itemOuverture = new javax.swing.JMenuItem("Ouverture");
+        itemOuverture.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoOuvertureActionPerformed();
+            }
+        });
+
+        javax.swing.JMenuItem itemFermeture = new javax.swing.JMenuItem("Fermeture");
+        itemFermeture.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoFermetureActionPerformed();
+            }
+        });
+
+        jMenuMorphoElementaire.add(itemErosion);
+        jMenuMorphoElementaire.add(itemDilatation);
+        jMenuMorphoElementaire.add(itemOuverture);
+        jMenuMorphoElementaire.add(itemFermeture);
+
+        jMenuTraitementNonLineaire.add(jMenuMorphoElementaire);
+
+        // --- Sous-menu Complexe ---
+        javax.swing.JMenu jMenuMorphoComplexe = new javax.swing.JMenu("Complexe");
+
+        javax.swing.JMenuItem itemDilatGeo = new javax.swing.JMenuItem("Dilatation géodésique");
+        itemDilatGeo.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoDilatationGeodesique();
+            }
+        });
+
+        javax.swing.JMenuItem itemReconGeo = new javax.swing.JMenuItem("Reconstruction géodésique");
+        itemReconGeo.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoReconstructionGeodesique();
+            }
+        });
+
+        javax.swing.JMenuItem itemMedian = new javax.swing.JMenuItem("Filtre médian");
+        itemMedian.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                morphoFiltreMedian();
+            }
+        });
+
+        jMenuMorphoComplexe.add(itemDilatGeo);
+        jMenuMorphoComplexe.add(itemReconGeo);
+        jMenuMorphoComplexe.add(itemMedian);
+
+        jMenuTraitementNonLineaire.add(jMenuMorphoComplexe);
+        jMenuBar1.add(jMenuTraitementNonLineaire);
+    }
+
+    // -----------------------------------------------------------------------
+    // Menu Contours → Linéaire
+    // -----------------------------------------------------------------------
+
+    private void setupContoursMenu()
+    {
+        jMenuContours = new javax.swing.JMenu("Contours");
+        jMenuContours.setEnabled(false);
+
+        javax.swing.JMenu jMenuContoursLineaire = new javax.swing.JMenu("Linéaire");
+
+        addContourItem(jMenuContoursLineaire, "Filtre de Prewitt",
+            isilimageprocessing.Dialogues.JDialogContourLineaire.Type.GRADIENT_PREWITT, 1);
+        addContourItem(jMenuContoursLineaire, "Filtre de Sobel",
+            isilimageprocessing.Dialogues.JDialogContourLineaire.Type.GRADIENT_SOBEL, 1);
+        jMenuContoursLineaire.addSeparator();
+        addContourItem(jMenuContoursLineaire, "Laplacien4",
+            isilimageprocessing.Dialogues.JDialogContourLineaire.Type.LAPLACIEN4, 0);
+        addContourItem(jMenuContoursLineaire, "Laplacien8",
+            isilimageprocessing.Dialogues.JDialogContourLineaire.Type.LAPLACIEN8, 0);
+
+        jMenuContours.add(jMenuContoursLineaire);
+
+        // ---- Sous-menu Non-linéaire ----
+        javax.swing.JMenu jMenuContoursNL = new javax.swing.JMenu("Non-linéaire");
+
+        addContourNLItem(jMenuContoursNL, "Gradient d'érosion",
+            isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type.GRADIENT_EROSION);
+        addContourNLItem(jMenuContoursNL, "Gradient de dilatation",
+            isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type.GRADIENT_DILATATION);
+        addContourNLItem(jMenuContoursNL, "Gradient de Beucher",
+            isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type.GRADIENT_BEUCHER);
+        addContourNLItem(jMenuContoursNL, "Laplacien non-linéaire",
+            isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type.LAPLACIEN_NL);
+
+        jMenuContours.add(jMenuContoursNL);
+        jMenuBar1.add(jMenuContours);
+    }
+
+    private void addContourItem(javax.swing.JMenu menu, String texte,
+                                 final isilimageprocessing.Dialogues.JDialogContourLineaire.Type type,
+                                 final int dir)
+    {
+        javax.swing.JMenuItem item = new javax.swing.JMenuItem(texte);
+        final String titre = texte;
+        item.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ouvrirContourLineaire(titre, type, dir);
+            }
+        });
+        menu.add(item);
+    }
+
+    private void ouvrirContourLineaire(String titre,
+                                        isilimageprocessing.Dialogues.JDialogContourLineaire.Type type,
+                                        int dir)
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        new isilimageprocessing.Dialogues.JDialogContourLineaire(
+            this, titre, type, dir, img, makeSlotReceiver()).setVisible(true);
+    }
+
+    private void addContourNLItem(javax.swing.JMenu menu, String texte,
+                                   final isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type type)
+    {
+        javax.swing.JMenuItem item = new javax.swing.JMenuItem(texte);
+        final String titre = texte;
+        item.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ouvrirContourNonLineaire(titre, type);
+            }
+        });
+        menu.add(item);
+    }
+
+    private void ouvrirContourNonLineaire(String titre,
+                                           isilimageprocessing.Dialogues.JDialogContourNonLineaire.Type type)
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        new isilimageprocessing.Dialogues.JDialogContourNonLineaire(
+            this, titre, type, img, makeSlotReceiver()).setVisible(true);
+    }
+
+    // -----------------------------------------------------------------------
+    // Menu Seuillage
+    // -----------------------------------------------------------------------
+
+    private void setupSeuillageMenu()
+    {
+        jMenuSeuillage = new javax.swing.JMenu("Seuillage");
+        jMenuSeuillage.setEnabled(false);
+
+        addSeuilItem("Seuillage simple",
+            isilimageprocessing.Dialogues.JDialogSeuillage.Type.SIMPLE);
+        addSeuilItem("Seuillage double",
+            isilimageprocessing.Dialogues.JDialogSeuillage.Type.DOUBLE);
+        addSeuilItem("Seuillage automatique",
+            isilimageprocessing.Dialogues.JDialogSeuillage.Type.AUTOMATIQUE);
+
+        jMenuBar1.add(jMenuSeuillage);
+    }
+
+    private void addSeuilItem(String texte,
+                               final isilimageprocessing.Dialogues.JDialogSeuillage.Type type)
+    {
+        javax.swing.JMenuItem item = new javax.swing.JMenuItem(texte);
+        item.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                ouvrirSeuillage(type);
+            }
+        });
+        jMenuSeuillage.add(item);
+    }
+
+    private void ouvrirSeuillage(isilimageprocessing.Dialogues.JDialogSeuillage.Type type)
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        new isilimageprocessing.Dialogues.JDialogSeuillage(
+            this, type, img, makeSlotReceiver()).setVisible(true);
+    }
+
+    // -----------------------------------------------------------------------
+    // Menu Applications
+    // -----------------------------------------------------------------------
+
+    private void setupApplicationsMenu()
+    {
+        jMenuApplications = new javax.swing.JMenu("Applications");
+
+        String[] noms = {
+            "1. Réduction du bruit",
+            "2. Égalisation histogramme (Lena)",
+            "3. Petits pois (bleus et rouges)",
+            "4. Balanes (grandes et petites)",
+            "5. Segmentation outils",
+            "6. Vaisseau spatial",
+            "7. Contours des tartines"
+        };
+
+        for (int k = 0; k < noms.length; k++) {
+            javax.swing.JMenuItem item = new javax.swing.JMenuItem(noms[k]);
+            final int idx = k;
+            item.addActionListener(new java.awt.event.ActionListener() {
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    switch (idx) {
+                        case 0: appEx1ReductionBruit();       break;
+                        case 1: appEx2EgalisationRGB();       break;
+                        case 2: appEx3PetitsPois();           break;
+                        case 3: appEx4Balanes();              break;
+                        case 4: appEx5SegmentationOutils();   break;
+                        case 5: appEx6VaisseauSpatial();      break;
+                        case 6: appEx7ContoursTartines();     break;
+                    }
+                }
+            });
+            jMenuApplications.add(item);
+        }
+
+        jMenuBar1.add(jMenuApplications);
+    }
+
+    /** Cherche un fichier image dans src/ImagesEtape5/. */
+    java.io.File trouverImage(String nom)
+    {
+        java.io.File f = new java.io.File("src/ImagesEtape5", nom);
+        if (f.exists()) return f;
+        return null;
+    }
+
+    void imageNonTrouvee(String nom)
+    {
+        JOptionPane.showMessageDialog(this, "Image non trouvée : " + nom,
+            "Image manquante", JOptionPane.ERROR_MESSAGE);
+    }
+
+    // ---- Exercice 1 : Réduction du bruit ----
+    private void appEx1ReductionBruit()     { new AppEx1ReductionBruit(this).executer(); }
+
+    // ---- Exercice 2 : Égalisation histogramme RGB ----
+    private void appEx2EgalisationRGB()     { new AppEx2EgalisationRGB(this).executer(); }
+
+    // ---- Exercice 3 : Petits pois ----
+    private void appEx3PetitsPois()         { new AppEx3PetitsPois(this).executer(); }
+
+    // ---- Exercice 4 : Balanes ----
+    private void appEx4Balanes()            { new AppEx4Balanes(this).executer(); }
+
+    // ---- Exercice 5 : Segmentation outils ----
+    private void appEx5SegmentationOutils() { new AppEx5SegmentationOutils(this).executer(); }
+
+    // ---- Exercice 6 : Vaisseau spatial ----
+    private void appEx6VaisseauSpatial()    { new AppEx6VaisseauSpatial(this).executer(); }
+
+    // ---- Exercice 7 : Contours des tartines ----
+    private void appEx7ContoursTartines()   { new AppEx7ContoursTartines(this).executer(); }
+
+    // -----------------------------------------------------------------------
+
+    private void morphoErosionActionPerformed()
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return MorphoElementaire.erosion(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Erosion", img, params, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    private void morphoDilatationActionPerformed()
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return MorphoElementaire.dilatation(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Dilatation", img, params, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    private void morphoOuvertureActionPerformed()
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return MorphoElementaire.ouverture(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Ouverture", img, params, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    private void morphoFermetureActionPerformed()
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return MorphoElementaire.fermeture(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Fermeture", img, params, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    // =========================================================
+    // MORPHOLOGIE COMPLEXE — helpers et handlers
+    // =========================================================
+
+    /**
+     * Ouvre un JFileChooser pour que l'utilisateur choisisse une image NG
+     * qui servira de masque géodésique. Retourne la matrice ou null si annulé.
+     */
+    private int[][] chargerMasqueGeodesique()
+    {
+        JFileChooser choix = new JFileChooser();
+        choix.setCurrentDirectory(new File("."));
+        choix.setDialogTitle("Choisir le masque géodésique (image NG)");
+        if (choix.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
+        File fichier = choix.getSelectedFile();
+        if (fichier == null) return null;
         try
         {
-            int[][] resultat = FiltrageLineaireLocal.filtreMasqueConvolution(imageNG.getMatrice(), masque);
-            afficherImageResultat(resultat, "Masque de convolution  (" + masque.length + "x" + masque.length + ")");
+            CImageNG masque = new CImageNG(fichier);
+            return masque.getMatrice();
+        }
+        catch (IOException ex)
+        {
+            JOptionPane.showMessageDialog(this,
+                "Erreur de lecture : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
+        catch (CImageNGException ex)
+        {
+            JOptionPane.showMessageDialog(this,
+                "Erreur image : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
+        return null;
+    }
+
+    private void morphoDilatationGeodesique()
+    {
+        if (imageNG == null) return;
+        try
+        {
+            String markerNom = (slotLabels[activeSlot] != null) ? slotLabels[activeSlot] : "Slot " + (activeSlot + 1);
+            SlotData marker  = new SlotData(imageNG.getMatrice(), markerNom);
+            new JDialogGeodesique(IsilImageProcessing.this,
+                JDialogGeodesique.Type.DILATATION, marker, buildMasqueSlots(), makeSlotReceiver()).setVisible(true);
+        }
+        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+    }
+
+    private void morphoReconstructionGeodesique()
+    {
+        if (imageNG == null) return;
+        try
+        {
+            String markerNom = (slotLabels[activeSlot] != null) ? slotLabels[activeSlot] : "Slot " + (activeSlot + 1);
+            SlotData marker  = new SlotData(imageNG.getMatrice(), markerNom);
+            new JDialogGeodesique(IsilImageProcessing.this,
+                JDialogGeodesique.Type.RECONSTRUCTION, marker, buildMasqueSlots(), makeSlotReceiver()).setVisible(true);
+        }
+        catch (CImageNGException ex) { System.err.println("Erreur CImageNG : " + ex.getMessage()); }
+    }
+
+    private void morphoFiltreMedian()
+    {
+        if (imageNG == null) return;
+        final int[][] img = getActiveMatrix();
+        if (img == null) return;
+        JPanel params = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        params.add(new JLabel("Taille masque :"));
+        final JSpinner sp = new JSpinner(new SpinnerNumberModel(3, 1, 99, 2));
+        params.add(sp);
+        JDialogTraitement.ComputeAction action = new JDialogTraitement.ComputeAction() {
+            public int[][] compute() throws Exception {
+                return MorphoComplexe.filtreMedian(img, (Integer) sp.getValue());
+            }
+        };
+        new JDialogTraitement(this, "Filtre médian", img, params, action, makeSlotReceiver()).setVisible(true);
+    }
+
+    // =========================================================
+    // SYSTÈME DE SLOTS
+    // =========================================================
+
+    private void setupSlots()
+    {
+        // Grille 2×2 pour 4 slots
+        JPanel mainSlotsPanel = new JPanel(new GridLayout(2, 2, 8, 8));
+        mainSlotsPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+
+        for (int i = 0; i < NB_SLOTS; i++)
+        {
+            final int idx = i;
+
+            // Observer (affichage + dessin)
+            slotObservers[i] = new JLabelBeanCImage();
+            slotObservers[i].addClicListener(this);
+            slotObservers[i].addSelectLigneListener(this);
+            slotObservers[i].addSelectRectListener(this);
+            slotObservers[i].addSelectRectFillListener(this);
+            slotObservers[i].addSelectCercleListener(this);
+            slotObservers[i].addSelectCercleFillListener(this);
+            slotObservers[i].setMode(JLabelBeanCImage.INACTIF);
+
+            // Label titre (clic = activer, drag = déplacer)
+            slotTitleLabels[i] = new JLabel("—", SwingConstants.CENTER);
+            slotTitleLabels[i].setFont(slotTitleLabels[i].getFont().deriveFont(11f));
+            slotTitleLabels[i].setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+            slotTitleLabels[i].setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+            slotTitleLabels[i].setToolTipText("Cliquez pour activer · Glissez pour déplacer");
+
+            // Clic sur le titre = activer le slot
+            slotTitleLabels[i].addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    setActiveSlot(idx);
+                }
+            });
+
+            // --- DRAG SOURCE : glisser depuis le titre ---
+            slotTitleLabels[i].setTransferHandler(new TransferHandler()
+            {
+                @Override
+                public int getSourceActions(JComponent c) {
+                    return (slotImagesNG[idx] != null) ? COPY : NONE;
+                }
+                @Override
+                protected Transferable createTransferable(JComponent c)
+                {
+                    if (slotImagesNG[idx] == null) return null;
+                    try {
+                        final SlotData sd = new SlotData(slotImagesNG[idx].getMatrice(), slotLabels[idx]);
+                        return new Transferable() {
+                            public DataFlavor[] getTransferDataFlavors() { return new DataFlavor[]{ SlotData.FLAVOR }; }
+                            public boolean isDataFlavorSupported(DataFlavor f) { return SlotData.FLAVOR.equals(f); }
+                            public Object getTransferData(DataFlavor f) { return sd; }
+                        };
+                    } catch (CImageNGException e) { return null; }
+                }
+            });
+            slotTitleLabels[i].addMouseMotionListener(new MouseMotionAdapter() {
+                public void mouseDragged(MouseEvent e) {
+                    JComponent c = (JComponent) e.getSource();
+                    c.getTransferHandler().exportAsDrag(c, e, TransferHandler.COPY);
+                }
+            });
+
+            // Bouton supprimer (✕) placé à droite du titre
+            JButton btnSupprimer = new JButton("✕");
+            btnSupprimer.setFont(btnSupprimer.getFont().deriveFont(java.awt.Font.BOLD, 11f));
+            btnSupprimer.setForeground(new Color(180, 50, 50));
+            btnSupprimer.setToolTipText("Supprimer l'image de ce slot");
+            btnSupprimer.setMargin(new java.awt.Insets(0, 5, 0, 5));
+            btnSupprimer.setFocusPainted(false);
+            btnSupprimer.addActionListener(new java.awt.event.ActionListener() {
+                public void actionPerformed(java.awt.event.ActionEvent evt) {
+                    supprimerSlot(idx);
+                }
+            });
+
+            JPanel headerPanel = new JPanel(new BorderLayout(0, 0));
+            headerPanel.add(slotTitleLabels[i], BorderLayout.CENTER);
+            headerPanel.add(btnSupprimer, BorderLayout.EAST);
+
+            slotScrollPanes[i] = new JScrollPane(slotObservers[i]);
+            slotScrollPanes[i].setPreferredSize(new Dimension(480, 380));
+
+            slotPanels[i] = new JPanel(new BorderLayout(2, 2));
+            slotPanels[i].add(headerPanel, BorderLayout.NORTH);
+            slotPanels[i].add(slotScrollPanes[i], BorderLayout.CENTER);
+
+            // Clic sur le panel = activer le slot
+            slotPanels[i].addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    setActiveSlot(idx);
+                }
+            });
+
+            // --- DROP TARGET : recevoir une image glissée ---
+            slotPanels[i].setTransferHandler(new TransferHandler()
+            {
+                @Override
+                public boolean canImport(TransferSupport support) {
+                    return support.isDataFlavorSupported(SlotData.FLAVOR);
+                }
+                @Override
+                public boolean importData(TransferSupport support)
+                {
+                    try {
+                        SlotData sd = (SlotData) support.getTransferable().getTransferData(SlotData.FLAVOR);
+                        placeInSlot(idx, sd.matrix, sd.label);
+                        return true;
+                    } catch (Exception ex) { return false; }
+                }
+            });
+
+            mainSlotsPanel.add(slotPanels[i]);
+        }
+
+        getContentPane().removeAll();
+        getContentPane().setLayout(new BorderLayout());
+        getContentPane().add(new JScrollPane(mainSlotsPanel), BorderLayout.CENTER);
+
+        observer = slotObservers[0];
+        setActiveSlot(0);
+
+        setSize(1100, 950);
+        setLocationRelativeTo(null);
+        revalidate();
+        repaint();
+    }
+
+    /** Place une image int[][] dans un slot donné et met à jour l'affichage. */
+    void placeInSlot(int slotIdx, int[][] matrix, String label)
+    {
+        try
+        {
+            CImageNG img = new CImageNG(matrix);
+            slotImagesNG[slotIdx]  = img;
+            slotImagesRGB[slotIdx] = null;
+            slotLabels[slotIdx]    = label;
+            String aff = (label != null && label.length() > 26) ? label.substring(0, 24) + "…" : (label != null ? label : "—");
+            slotTitleLabels[slotIdx].setText("<html><center>" + aff + "</center></html>");
+            slotObservers[slotIdx].setCImage(img);
+            if (slotIdx == activeSlot) setActiveSlot(activeSlot);
+        }
+        catch (CImageNGException ex) { System.err.println("Erreur slot : " + ex.getMessage()); }
+    }
+
+    /** Place une CImageRGB dans un slot donné et met à jour l'affichage. */
+    void placeInSlotRGB(int slotIdx, CImageRGB img, String label)
+    {
+        slotImagesRGB[slotIdx] = img;
+        slotImagesNG[slotIdx]  = null;
+        slotLabels[slotIdx]    = label;
+        String aff = (label != null && label.length() > 26) ? label.substring(0, 24) + "…" : (label != null ? label : "—");
+        slotTitleLabels[slotIdx].setText("<html><center>" + aff + "</center></html>");
+        slotObservers[slotIdx].setCImage(img);
+        if (slotIdx == activeSlot) setActiveSlot(activeSlot);
+    }
+
+    /** Vide un slot : efface l'image, réinitialise le titre et l'affichage. */
+    void supprimerSlot(int idx)
+    {
+        slotImagesNG[idx]  = null;
+        slotImagesRGB[idx] = null;
+        slotLabels[idx]    = null;
+        slotTitleLabels[idx].setText("—");
+
+        // Recréer un observer vierge (JLabelBeanCImage n'a pas de méthode clear)
+        JLabelBeanCImage nouvelObs = new JLabelBeanCImage();
+        nouvelObs.setMode(JLabelBeanCImage.INACTIF);
+        nouvelObs.addClicListener(this);
+        nouvelObs.addSelectLigneListener(this);
+        nouvelObs.addSelectRectListener(this);
+        nouvelObs.addSelectRectFillListener(this);
+        nouvelObs.addSelectCercleListener(this);
+        nouvelObs.addSelectCercleFillListener(this);
+        slotObservers[idx] = nouvelObs;
+        slotScrollPanes[idx].setViewportView(nouvelObs);
+        slotScrollPanes[idx].revalidate();
+
+        if (idx == activeSlot) {
+            imageNG  = null;
+            imageRGB = null;
+            observer = slotObservers[idx];
+        }
+        setActiveSlot(idx);
+    }
+
+    void setActiveSlot(int index)
+    {
+        activeSlot = index;
+        observer   = slotObservers[index];
+        imageNG    = slotImagesNG[index];
+        imageRGB   = slotImagesRGB[index];
+
+        // Réinitialise les modes de dessin
+        jCheckBoxMenuItemDessinerPixel.setSelected(false);
+        jCheckBoxMenuItemDessinerLigne.setSelected(false);
+        jCheckBoxMenuItemDessinerRectangle.setSelected(false);
+        jCheckBoxMenuItemDessinerRectanglePlein.setSelected(false);
+        jCheckBoxMenuItemDessinerCercle.setSelected(false);
+        jCheckBoxMenuItemDessinerCerclePlein.setSelected(false);
+        for (int i = 0; i < NB_SLOTS; i++)
+            slotObservers[i].setMode(JLabelBeanCImage.INACTIF);
+
+        // Bordures : bleu épais sur le slot actif, gris sur les autres
+        for (int i = 0; i < NB_SLOTS; i++)
+        {
+            String nom = "Slot " + (i + 1);
+            if (i == activeSlot)
+                slotPanels[i].setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(new Color(0, 120, 215), 3), nom + "  ★ actif"));
+            else
+                slotPanels[i].setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1), nom));
+        }
+
+        // Met à jour les menus selon l'image du slot actif
+        if (imageNG != null)        activeMenusNG();
+        else if (imageRGB != null)  activeMenusRGB();
+        else
+        {
+            jMenuDessiner.setEnabled(false);
+            jMenuFourier.setEnabled(false);
+            jMenuHistogramme.setEnabled(false);
+            jMenuFiltrageLineaire.setEnabled(false);
+            jMenuTraitementNonLineaire.setEnabled(false);
+            jMenuContours.setEnabled(false);
+            jMenuSeuillage.setEnabled(false);
+        }
+    }
+
+    /**
+     * Propose à l'utilisateur de choisir le masque géodésique parmi les slots
+     * non vides (NG uniquement), avec une option "Charger depuis un fichier".
+     */
+    private SlotData choisirMasqueGeodesique(String titre)
+    {
+        List<Integer> slotsDisponibles = new ArrayList<Integer>();
+        List<String>  options          = new ArrayList<String>();
+        for (int i = 0; i < NB_SLOTS; i++)
+        {
+            if (slotImagesNG[i] != null)
+            {
+                slotsDisponibles.add(i);
+                String nom = slotLabels[i] != null ? slotLabels[i] : "—";
+                options.add("Slot " + (i + 1) + " : " + nom);
+            }
+        }
+        options.add("Charger depuis un fichier...");
+
+        Object[] opt = options.toArray();
+        int choix = JOptionPane.showOptionDialog(this,
+            "Choisissez le masque géodésique :", titre,
+            JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+            null, opt, opt[0]);
+
+        if (choix < 0) return null;
+
+        if (choix == slotsDisponibles.size())
+        {
+            int[][] m = chargerMasqueGeodesique();
+            return (m != null) ? new SlotData(m, "fichier") : null;
+        }
+
+        try
+        {
+            int idx = slotsDisponibles.get(choix);
+            String nom = slotLabels[idx] != null ? slotLabels[idx] : "Slot " + (idx + 1);
+            return new SlotData(slotImagesNG[idx].getMatrice(), nom);
         }
         catch (CImageNGException ex)
         {
             System.err.println("Erreur CImageNG : " + ex.getMessage());
+            return null;
         }
     }
 
